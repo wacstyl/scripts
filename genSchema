@@ -1,0 +1,74 @@
+#!/bin/bash
+
+# Directory of only Gron'd files
+dir="${1}"
+
+# Desired DB Schema name
+dbSchema="${2}"
+
+if [ "${dir}" == "" ]
+then
+  #dir='/Users/wacstyl/Desktop/Spectrum/api/core/getEquipmentData/formattedGron'
+  #dbSchema='getEquipment'
+
+  #dir='/Users/wacstyl/Desktop/Spectrum/api/nextgen/customerServicesOutput/formattedGron'
+  #dbSchema='customerServices'
+
+  dir='/Users/wacstyl/Desktop/Spectrum/api/core/getCurrentServicesData/formattedGron'
+  dbSchema='getCurrentServices'
+fi
+
+# Get a distinct list of element paths
+schemaData=`cat "${dir}"/* |grep -v "{};$" |grep -v "\[\];$"|cut -d" " -f1 |sed 's/ $//g' |sed 's/\[[0-9]*\]//g' |sort |uniq`
+
+# Set defaults and initial params
+badWordListFile="badWordList"
+defaultDataType="varchar(256)"
+idType="INT UNSIGNED NOT NULL AUTO_INCREMENT"
+parentIdType="INT"
+
+# Set a list of what will be table name and column name
+list=`echo "${schemaData}" |awk -F"." '{print $(NF-1),$NF}'` 
+
+# Set a list of what will be the parent table and table name
+parentList=`echo "${schemaData}" |awk -F"." '{print $(NF-2),$(NF-1)}' |sort |uniq`
+
+# Create schema statement
+echo "CREATE SCHEMA \`$dbSchema\`;
+
+"
+
+# Set list of distinct table names to be created
+tableList=`echo "${list}" |cut -d" " -f1 |sort|uniq`
+
+# Iterate through the list of tables
+for table in ${tableList}
+do
+  fieldList=`echo "${list}" |grep ^"${table}" |awk -F" " '{print $NF}' |sort |uniq`
+
+  parent=`echo "${parentList}" |grep ${table}$ |awk -F" " '{print $(NF-1)}'`
+
+  echo "Create table ${dbSchema}.${table} ("
+  echo "   id ${idType}"
+  echo "  ,primary key (id)"
+
+  if [ "${parent}" != "" ]
+  then
+    echo "  ,${parent}_id ${parentIdType}"
+  fi
+    
+  for field in ${fieldList}
+  do
+    grep -iq ^"${field}"$ ${badWordListFile}
+    if [ $? -eq 0 ]
+    then
+      echo "  ,${field}_x ${defaultDataType}"
+    else
+      echo "  ,${field} ${defaultDataType}"
+    fi
+  done
+  echo ");
+
+"
+done
+

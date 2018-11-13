@@ -1,0 +1,79 @@
+#!/bin/bash
+
+file="${1}"
+dbSchema="${2}"
+
+badWordListFile="badWordList"
+keys=''
+values=''
+
+# Order of insert operation
+#tableList=`cat "${file}" |cut -d"=" -f1 |awk -F"." '{$1=""; print $0}'| awk '{$NF=""; print $0}' |sort |uniq`
+
+longTableList=`cat "${file}" |cut -d"=" -f1 |awk -F"." '{$1=""; print $0}'| awk '{$NF=""; print $0}' |sort |uniq |sed 's/ /./g' |sed 's/\.$//g' |sed 's/\[/\\\[/g' |sed 's/\]/\\\]/g'`
+
+for longTable in `echo "${longTableList}"`
+do
+  #table=`echo "${longTable}" |awk -F"." '{$1=""; print $0}'| awk '{$NF=""; print $0}'`
+  table=`echo "${longTable}" |awk -F"." '{print $NF}' |sed 's/\\\[[0-9]*\\\]//g'`
+  table_id="${table}_id"
+  parent=`echo "${longTable}" |awk -F"." '{print $(NF-1)}' |sed 's/\\\[[0-9]*\\\]//g'`
+
+  if [ "${table}" == "${parent}" ]
+  then
+    parent=""
+  else
+    parent="${parent}_id"
+  fi
+
+  keys=''
+  values=''
+
+  #keyValue=`cat "${file}" |grep "${table}.[a-zA-Z]* " |grep -v "= \[\]" |grep -v "= {}"`
+  keyValue=`cat "${file}" |grep "${longTable}\.[a-zA-Z]* " |grep -v "= \[\]" |grep -v "= {}"`
+
+  for key in `echo "${keyValue}" |cut -d"=" -f1 |awk -F"." '{print $NF}'`
+  do
+    grep -iq ^"${key}"$ ${badWordListFile}
+    if [ $? -eq 0 ]
+    then
+      keys="${keys}${key}_x,"
+    else
+      keys="${keys}${key},"
+    fi
+  done
+
+  if [ "${parent}" != "" ]
+  then
+    keys="${keys}${parent},"
+  fi
+
+  keys=`echo "${keys}" |tr -d '\n' |sed 's/,$//g'`
+  keys="(${keys})"
+  #echo $keys
+
+  for value in `echo "${keyValue}" |cut -d"=" -f2 | sed 's/;$//g'`
+  do
+    values="${values}${value},"
+  done
+
+  if [ "${parent}" != "" ]
+  then
+    values="${values}@${parent},"
+  fi
+
+  values=`echo "${values}" |tr -d '\n' |sed 's/,$//g'`
+  values="values(${values})"
+
+  if [ "${keys}" == "()" ] || [ "${values}" == "values()" ]
+  then
+    continue
+  else
+    echo "insert into ${dbSchema}.${table} ${keys} ${values};"
+    echo "SELECT @${table_id} := LAST_INSERT_ID();"
+  fi
+done
+
+#cat "${file}" |grep "${dbSchema}.[a-zA-Z]* " |grep -v "= \[\]"
+#cat "${file}" |grep "itemList\[1\].[a-zA-Z]* " |grep -v "= \[\]" |grep -v "= {}"
+
